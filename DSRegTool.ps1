@@ -1369,21 +1369,21 @@ Function CollectLog($RunLogs){
 Function CollectLogAADEXMetadata{
 
     $response=""
-    $response=(curl -H @{"Metadata"="true"} "http://169.254.169.254/metadata/identity/info?api-version=2018-02-01" -UseBasicParsing).content
+    $response=(Invoke-WebRequest -H @{"Metadata"="true"} "http://169.254.169.254/metadata/identity/info?api-version=2018-02-01" -UseBasicParsing).content
     if ($response.length){
         $response | Out-file "$global:LogsPath\AADExtention\AzureVMTenantID.txt"
         Write-Log -Message "AzureVMTenantID.txt Exported" -logfile $global:LogsPath\Log.log
     }
     
     $response=""
-    $response=(curl -H @{"Metadata"="true"} "http://169.254.169.254/metadata/instance?api-version=2017-08-01" -UseBasicParsing).content
+    $response=(Invoke-WebRequest -H @{"Metadata"="true"} "http://169.254.169.254/metadata/instance?api-version=2017-08-01" -UseBasicParsing).content
     if ($response.length){
         $response | Out-file "$global:LogsPath\AADExtention\AzuerVMInfo.txt"
         Write-Log -Message "AzuerVMInfo.txt Exported" -logfile $global:LogsPath\Log.log
     }
 
     $response=""
-    $response=(curl -H @{"Metadata"="true"} "http://169.254.169.254/metadata/identity/oauth2/token?resource=urn:ms-drs:enterpriseregistration.windows.net&api-version=2018-02-01" -UseBasicParsing).content
+    $response=(Invoke-WebRequest -H @{"Metadata"="true"} "http://169.254.169.254/metadata/identity/oauth2/token?resource=urn:ms-drs:enterpriseregistration.windows.net&api-version=2018-02-01" -UseBasicParsing).content
     if ($response.length){
         $response | Out-file "$global:LogsPath\AADExtention\AzureVMAccessToken.txt"
         Write-Log -Message "AzureVMAccessToken.txt Exported" -logfile $global:LogsPath\Log.log
@@ -1929,7 +1929,7 @@ Function RunPScript([String] $PSScript){
 Function CheckCert ([String] $DeviceID, [String] $DeviceThumbprint){
 
     #Search for the certificate:
-    if ($localCert = dir Cert:\LocalMachine\My\ | where { $_.Issuer -match "CN=MS-Organization-Access" -and $_.Subject -match "CN="+$DeviceID}){
+    if ($localCert = Get-ChildItem Cert:\LocalMachine\My\ | Where-Object { $_.Issuer -match "CN=MS-Organization-Access" -and $_.Subject -match "CN="+$DeviceID}){
         #The certificate exists
         Write-Host "Certificate does exist." -ForegroundColor Green
         #Cheching the certificate configuration
@@ -1961,7 +1961,7 @@ Function CheckCert ([String] $DeviceID, [String] $DeviceThumbprint){
         }
 
         # Check DeviceID and CertSubject
-        $CertDNSName = $CertDNSNameList | select Punycode,Unicode
+        $CertDNSName = $CertDNSNameList | Select-Object Punycode,Unicode
         if (($DeviceID -ne $CertDNSName.Punycode) -or ($DeviceID -ne $CertDNSName.Unicode)){
             Write-Host "The certificate subject is not correct." -ForegroundColor Red
             Write-Host ''
@@ -2052,7 +2052,7 @@ Function CheckCert ([String] $DeviceID, [String] $DeviceThumbprint){
 
 Function CheckUserCert ([String] $DeviceID, [String] $DeviceThumbprint){
     #Search for the certificate:
-    if ($localCert = dir Cert:\CurrentUser\My\ | where { $_.Issuer -match "CN=MS-Organization-Access" -and $_.Subject -match "CN="+$DeviceID}){
+    if ($localCert = Get-ChildItem Cert:\CurrentUser\My\ | Where-Object { $_.Issuer -match "CN=MS-Organization-Access" -and $_.Subject -match "CN="+$DeviceID}){
     #The certificate exists
     Write-Host "Certificate does exist" -ForegroundColor Green
     Write-Log -Message "Certificate does exist"
@@ -2087,7 +2087,7 @@ Function CheckUserCert ([String] $DeviceID, [String] $DeviceThumbprint){
         exit
     }
         # Check DeviceID and CertSubject
-        $CertDNSName = $CertDNSNameList | select Punycode,Unicode
+        $CertDNSName = $CertDNSNameList | Select-Object Punycode,Unicode
 
         if (($DeviceID -ne $CertDNSName.Punycode) -or ($DeviceID -ne $CertDNSName.Unicode)){
             Write-Host "The certificate subject is not correct" -ForegroundColor Red
@@ -3254,7 +3254,7 @@ $global:device=$false
 $global:enterprise=$false
 $global:ProxyServer=""
 
-cls
+Clear-Host
 '==========================================================='
 Write-Host '          Device Registration Troubleshooter Tool          ' -ForegroundColor Green 
 '==========================================================='
