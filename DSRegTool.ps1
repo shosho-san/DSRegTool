@@ -1758,7 +1758,7 @@ Function LogsCollection{
                 Write-Host "Please locate DSRegToolLog folder/path where you start the tool previously, and start the tool again" -ForegroundColor Red
                 write-log -Message "Please locate DSRegToolLog folder/path where you start the tool previously, and start the tool again" -Level ERROR
             }
-        }elseif($input -eq 'n'){
+        }elseif($userInput -eq 'n'){
             Write-Log -Message "Start new collection option has selected" -logfile "$global:LogsPath\Log.log"
             #Start log collection from bigning
             StartLogCollection
