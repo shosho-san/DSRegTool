@@ -182,9 +182,6 @@ Function Test-DevRegConnectivity-User($Write){
     $TestConnResult=@()
     If($Write){Write-Host}
     If($Write){Write-Host "Testing Internet Connectivity..." -ForegroundColor Yellow; Write-Log -Message "Testing Internet Connectivity..."}
-    $InternetConn1=$true
-    $InternetConn2=$true
-    $InternetConn3=$true
     #$TestResult = (Test-NetConnection -ComputerName login.microsoftonline.com -Port 443).TcpTestSucceeded
     $TestResult = (Invoke-WebRequest -uri 'https://login.microsoftonline.com/common/oauth2' -UseBasicParsing).StatusCode
     if ($TestResult -eq 200){
@@ -193,7 +190,6 @@ Function Test-DevRegConnectivity-User($Write){
     }else{
         If($Write){Write-Host "Connection to login.microsoftonline.com ................. failed." -ForegroundColor Red; Write-Log -Message "Connection to login.microsoftonline.com ................. failed." -Level ERROR}
         $TestConnResult = $TestConnResult + "Connection to login.microsoftonline.com ................. failed."
-        $InternetConn1=$false
         $global:TestFailed=$true
     }
     #$TestResult = (Test-NetConnection -ComputerName device.login.microsoftonline.com -Port 443).TcpTestSucceeded
@@ -204,7 +200,6 @@ Function Test-DevRegConnectivity-User($Write){
     }else{
         If($Write){Write-Host "Connection to device.login.microsoftonline.com .......... failed." -ForegroundColor Red ;Write-Log -Message "Connection to device.login.microsoftonline.com .......... failed." -Level ERROR}
         $TestConnResult = $TestConnResult + "Connection to device.login.microsoftonline.com .......... failed."
-        $InternetConn2=$false
         $global:TestFailed=$true
     }
     #$TestResult = (Test-NetConnection -ComputerName enterpriseregistration.windows.net -Port 443).TcpTestSucceeded
@@ -215,7 +210,6 @@ Function Test-DevRegConnectivity-User($Write){
     }else{
         If($Write){Write-Host "Connection to enterpriseregistration.windows.net ........ failed." -ForegroundColor Red ;Write-Log -Message "Connection to enterpriseregistration.windows.net ........ failed." -Level ERROR}
         $TestConnResult = $TestConnResult + "Connection to enterpriseregistration.windows.net ........ failed."
-        $InternetConn3=$false
         $global:TestFailed=$true
     }
     if ($Write){
@@ -346,10 +340,9 @@ Function SyncJoinCheck($Fallback){
         Write-Host ''
         Write-Host "Testing OS version..." -ForegroundColor Yellow
         Write-Log -Message "Testing OS version..."
-        $OSVersoin = ([environment]::OSVersion.Version).major
+        $OSVersion = ([environment]::OSVersion.Version).major
         $OSBuild = ([environment]::OSVersion.Version).Build
-        if (($OSVersoin -ge 10) -and ($OSBuild -ge 17134)){#17134 build is 1803
-            $OSVer = (([environment]::OSVersion).Version).ToString()
+        if (($OSVersion -ge 10) -and ($OSBuild -ge 17134)){#17134 build is 1803
             Write-Host "Test passed: OS version supports fallback to sync join" -ForegroundColor Green
             Write-Log -Message "Test passed: OS version supports fallback to sync join"
         }else{
@@ -534,7 +527,6 @@ Function CheckPRT{
         Write-Log -Message "$hostname device is NOT joined to the local domain"
     }else{
         #The device is joined to the local domain.
-        $IS_DJ = $true
         $DomainName = $DSReg | Select-String DomainName 
         $DomainName =($DomainName.tostring() -split ":")[1].trim()
         $hostname = hostname
@@ -1167,7 +1159,7 @@ Function VerifySCP{
         $ConfigurationName = $Root.rootDomainNamingContext
         $scp = New-Object System.DirectoryServices.DirectoryEntry;
         $scp.Path = "LDAP://CN=62a0ff2e-97b9-4513-943f-0d221bd30080,CN=Device Registration Configuration,CN=Services,CN=Configuration," + $ConfigurationName;
-        if ($scp.Keywords -ne $null){
+        if ($null -ne $scp.Keywords){
             Write-Host "Service Connection Point (SCP) is configured as following:" -ForegroundColor Green
             Write-Log -Message "Service Connection Point (SCP) is configured as following:"
             $scp.Keywords
@@ -1295,7 +1287,7 @@ Function getSCP{
     }else{
         $scp = New-Object System.DirectoryServices.DirectoryEntry;
         $scp.Path = "LDAP://CN=62a0ff2e-97b9-4513-943f-0d221bd30080,CN=Device Registration Configuration,CN=Services,CN=Configuration," + $ConfigurationName;
-        if ($scp.Keywords -ne $null){
+        if ($null -ne $scp.Keywords){
             Add-Content "$global:LogsPath\SCP-config-partition.txt" -Value $scp.Keywords -ErrorAction SilentlyContinue
             $TN = $scp.Keywords | Select-String azureADName
             $TN = ($TN.tostring() -split ":")[1].trim()
@@ -1311,8 +1303,8 @@ Function getSCP{
     }else{
         #$SCPClient=$true
         $SCPclientside= "Client-side registry setting for SCP is configured as the following:`n"
-        $SCPclientside+=$Reg_TenantId="TenantId:"+ $Reg.TenantId+"`n"
-        $SCPclientside+=$Reg_TenantName="TenantName:"+ $Reg.TenantName
+        $SCPclientside+="TenantId:"+ $Reg.TenantId+"`n"
+        $SCPclientside+="TenantName:"+ $Reg.TenantName
         Add-Content "$global:LogsPath\SCP-client-side.txt" -Value $SCPclientside -ErrorAction SilentlyContinue
         $global:TenantName=$Reg.TenantName
     }
@@ -1751,11 +1743,11 @@ Function LogsCollection{
         Write-Log -Message "Debug logs are enabled, it seems you started log collection" -logfile "$global:LogsPath\Log.log"
         write-Host "Do you want to continue with current log collection? [Y/N]" -ForegroundColor Yellow
         Write-Log -Message "Do you want to continue with current log collection? [Y/N]" -logfile "$global:LogsPath\Log.log"
-        $input=Read-Host "Enter 'Y' to continue, or 'N' to start a new log collection"
-        While(($input -ne 'y') -AND ($input -ne 'n')){
-            $input = Read-Host -Prompt "Invalid input. Please make a correct selection from the above options, and press Enter" 
+        $userInput=Read-Host "Enter 'Y' to continue, or 'N' to start a new log collection"
+        While(($userInput -ne 'y') -AND ($userInput -ne 'n')){
+            $userInput = Read-Host -Prompt "Invalid input. Please make a correct selection from the above options, and press Enter" 
         }
-        if($input -eq 'y'){
+        if($userInput -eq 'y'){
             Write-Log -Message "Continue option has selected" -logfile "$global:LogsPath\Log.log"
             #Test if DSRegToolLog folder exist
             if(Test-Path $global:LogsPath){
@@ -1933,16 +1925,11 @@ Function CheckCert ([String] $DeviceID, [String] $DeviceThumbprint){
         #The certificate exists
         Write-Host "Certificate does exist." -ForegroundColor Green
         #Cheching the certificate configuration
-        $CertSubject = $localCert.subject
         $CertDNSNameList = $localCert.DnsNameList
-        $CertThumbprint = $localCert.Thumbprint
-        $NotBefore = $localCert.NotBefore
         $NotAfter = $localCert.NotAfter
         $IssuerName = $localCert.IssuerName
         $Issuer = $localCert.Issuer
-        $subbectName = $localCert.SubjectName
         $Algorithm = $localCert.SignatureAlgorithm
-        $PublicKey = $localCert.PublicKey
         $HasPrivateKey = $localCert.HasPrivateKey
 
         # Check Cert Expiration
@@ -2057,16 +2044,11 @@ Function CheckUserCert ([String] $DeviceID, [String] $DeviceThumbprint){
     Write-Host "Certificate does exist" -ForegroundColor Green
     Write-Log -Message "Certificate does exist"
     #Cheching the certificate configuration
-    $CertSubject = $localCert.subject
     $CertDNSNameList = $localCert.DnsNameList
-    $CertThumbprint = $localCert.Thumbprint
-    $NotBefore = $localCert.NotBefore
     $NotAfter = $localCert.NotAfter
     $IssuerName = $localCert.IssuerName
     $Issuer = $localCert.Issuer
-    $subbectName = $localCert.SubjectName
     $Algorithm = $localCert.SignatureAlgorithm
-    $PublicKey = $localCert.PublicKey
     $HasPrivateKey = $localCert.HasPrivateKey
     # Check Cert Expiration
     if (($NotAfter.toString("yyyy-M-dd")) -gt (Get-Date -format yyyy-M-dd)){
@@ -3278,7 +3260,7 @@ Write-Host ''
 Write-Host "Enter (Q) to Quit" -ForegroundColor Green
 Write-Host ''
 Add-Content ".\DSRegTool.log" -Value "==========================================================" -ErrorAction SilentlyContinue
-if($Error[0].Exception.Message -ne $null){
+if($null -ne $Error[0].Exception.Message){
     if($Error[0].Exception.Message.Contains('denied')){
         Write-Host "Was not able to create log file." -ForegroundColor Yellow
         Write-Host ''
