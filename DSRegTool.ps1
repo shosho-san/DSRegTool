@@ -3325,7 +3325,7 @@ if($null -ne $Error[0].Exception.Message){
     Write-Host ''
 }
 Add-Content ".\DSRegTool.log" -Value "==========================================================" -ErrorAction SilentlyContinue
-Write-Log -Message "DSRegTool 4.0 has started"
+Write-Log -Message "DSRegTool 4.0.1 has started"
 $msg="Device Name : " + (Get-Childitem env:computername).value
 Write-Log -Message $msg
 
