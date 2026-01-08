@@ -1880,25 +1880,49 @@ Function CheckMSOnline{
 Function RunPScript([String] $PSScript){
     $GUID=[guid]::NewGuid().Guid
     $TaskName = "DSRegTool_$GUID"
+    $TempRoot = Join-Path $env:WINDIR "Temp"
+    $ScriptFile = Join-Path $TempRoot "$TaskName.ps1"
+    $OutFile = Join-Path $TempRoot "$TaskName.xml"
+    $ErrFile = Join-Path $TempRoot "$TaskName.err.txt"
 
-    $Job = Register-ScheduledJob -Name $GUID -ScheduledJobOption (New-ScheduledJobOption -RunElevated) -ScriptBlock ([ScriptBlock]::Create($PSScript)) -ArgumentList ($PSScript) -ErrorAction Stop
-
-    $null = Register-ScheduledTask -TaskName $TaskName -Action (New-ScheduledTaskAction -Execute $Job.PSExecutionPath -Argument $Job.PSExecutionArgs) -Principal (New-ScheduledTaskPrincipal -UserID "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest) -ErrorAction Stop
-
-    Start-ScheduledTask -TaskName $TaskName -AsJob -ErrorAction Stop | Wait-Job | Remove-Job -Force -Confirm:$False
-
-    while ($true) {
-        $TaskInfo = Get-ScheduledTaskInfo -TaskName $TaskName -ErrorAction SilentlyContinue
-        if (-not $TaskInfo -or $TaskInfo.LastTaskResult -ne 267009) {break}
-        Start-Sleep -Milliseconds 150
+    $scriptTemplate = @'
+$ErrorActionPreference = "Stop"
+try {
+    $result = & {
+__DSREGTOOL_SCRIPT__
     }
+    $result | Export-Clixml -Path "__DSREGTOOL_OUT__" -Force
+} catch {
+    $_ | Out-String | Set-Content -Path "__DSREGTOOL_ERR__" -Force
+    exit 1
+}
+'@
+    $scriptContent = $scriptTemplate.Replace("__DSREGTOOL_SCRIPT__", $PSScript).Replace("__DSREGTOOL_OUT__", $OutFile).Replace("__DSREGTOOL_ERR__", $ErrFile)
+    Set-Content -Path $ScriptFile -Value $scriptContent -Encoding ASCII -Force
 
-    $Job1 = Get-Job -Name $GUID -ErrorAction SilentlyContinue | Wait-Job
-    $Job1 | Receive-Job -Wait -AutoRemoveJob 
+    $action = New-ScheduledTaskAction -Execute "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$ScriptFile`""
+    $principal = New-ScheduledTaskPrincipal -UserID "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
 
-    Unregister-ScheduledJob -Id $Job.Id -Force -Confirm:$False
+    try {
+        Register-ScheduledTask -TaskName $TaskName -Action $action -Principal $principal -ErrorAction Stop | Out-Null
+        Start-ScheduledTask -TaskName $TaskName -ErrorAction Stop | Out-Null
 
-    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+        $startTime = Get-Date
+        $timeoutSeconds = 120
+        while (-not (Test-Path -Path $OutFile) -and -not (Test-Path -Path $ErrFile)) {
+            if ((New-TimeSpan -Start $startTime -End (Get-Date)).TotalSeconds -gt $timeoutSeconds) {break}
+            Start-Sleep -Milliseconds 200
+        }
+
+        if (Test-Path -Path $OutFile) {
+            return Import-Clixml -Path $OutFile -ErrorAction SilentlyContinue
+        }
+
+        return $null
+    } finally {
+        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
+        Remove-Item -Path $ScriptFile,$OutFile,$ErrFile -Force -ErrorAction SilentlyContinue
+    }
 }
 
 Function CheckCert ([String] $DeviceID, [String] $DeviceThumbprint){
