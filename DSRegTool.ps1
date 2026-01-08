@@ -1,4 +1,5 @@
-﻿<#
+﻿#requires -Version 5.1
+<#
  
 .SYNOPSIS
     DSRegTool V4.0.1 PowerShell script.
@@ -273,29 +274,6 @@ Function Write-Log{
 Function PSasAdmin{
     $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
     $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-}
-
-Function Test-DevRegApp-old{
-    Write-Host ''
-    Write-Host "Testing Device Registration Service..." -ForegroundColor Yellow
-    Write-Log -Message "Testing Device Registration Service..."
-    if ((Get-MsolServicePrincipal -AppPrincipalId 01cb2876-7ebd-4aa4-9cc9-d28bd4d359a9).accountenabled){
-       Write-Host "Test passed: Device Registration Service is enabled on the tenant" -ForegroundColor Green 
-       Write-Log -Message "Test passed: Device Registration Service is enabled on the tenant"
-    }else{
-        Write-Host "Test failed: Device Registration Service is disabled on the tenant" -ForegroundColor red
-        Write-Log -Message "Test failed: Device Registration Service is disabled on the tenant" -Level ERROR
-        Write-Host ''
-        Write-Host "Recommended action: enable Device Registration Service application on your tenant" -ForegroundColor Yellow
-        Write-Log -Message "Recommended action: enable Device Registration Service application on your tenant"
-        Write-Host ''
-        Write-Host ''
-        Write-Host "Script completed successfully." -ForegroundColor Green
-        Write-Log -Message "Script completed successfully."
-        Write-Host ''
-        Write-Host ''
-        exit                
-    }
 }
 
 Function Test-DevRegApp{
