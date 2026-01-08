@@ -1901,21 +1901,26 @@ Function CheckMSOnline{
 
 Function RunPScript([String] $PSScript){
     $GUID=[guid]::NewGuid().Guid
+    $TaskName = "DSRegTool_$GUID"
 
     $Job = Register-ScheduledJob -Name $GUID -ScheduledJobOption (New-ScheduledJobOption -RunElevated) -ScriptBlock ([ScriptBlock]::Create($PSScript)) -ArgumentList ($PSScript) -ErrorAction Stop
 
-    $null = Register-ScheduledTask -TaskName $GUID -Action (New-ScheduledTaskAction -Execute $Job.PSExecutionPath -Argument $Job.PSExecutionArgs) -Principal (New-ScheduledTaskPrincipal -UserID "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest) -ErrorAction Stop
+    $null = Register-ScheduledTask -TaskName $TaskName -Action (New-ScheduledTaskAction -Execute $Job.PSExecutionPath -Argument $Job.PSExecutionArgs) -Principal (New-ScheduledTaskPrincipal -UserID "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest) -ErrorAction Stop
 
-    Start-ScheduledTask -TaskName $GUID -AsJob -ErrorAction Stop | Wait-Job | Remove-Job -Force -Confirm:$False
+    Start-ScheduledTask -TaskName $TaskName -AsJob -ErrorAction Stop | Wait-Job | Remove-Job -Force -Confirm:$False
 
-    While ((Get-ScheduledTaskInfo -TaskName $GUID).LastTaskResult -eq 267009) {Start-Sleep -Milliseconds 150}
+    while ($true) {
+        $TaskInfo = Get-ScheduledTaskInfo -TaskName $TaskName -ErrorAction SilentlyContinue
+        if (-not $TaskInfo -or $TaskInfo.LastTaskResult -ne 267009) {break}
+        Start-Sleep -Milliseconds 150
+    }
 
     $Job1 = Get-Job -Name $GUID -ErrorAction SilentlyContinue | Wait-Job
     $Job1 | Receive-Job -Wait -AutoRemoveJob 
 
     Unregister-ScheduledJob -Id $Job.Id -Force -Confirm:$False
 
-    Unregister-ScheduledTask -TaskName $GUID -Confirm:$false
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
 }
 
 Function CheckCert ([String] $DeviceID, [String] $DeviceThumbprint){
