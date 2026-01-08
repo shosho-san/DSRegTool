@@ -727,40 +727,59 @@ Function checkProxy($Write){
     If($Write){Write-Host "Checking winHTTP proxy settings..." -ForegroundColor Yellow; Write-Log -Message "Checking winHTTP proxy settings..."}
     $global:ProxyServer="NoProxy"
     $winHTTP = netsh winhttp show proxy
-    $Proxy = $winHTTP | Select-String server
-    $global:ProxyServer=$Proxy.ToString().TrimStart("Proxy Server(s) :  ")
-    $global:Bypass = $winHTTP | Select-String Bypass
-    $global:Bypass=$global:Bypass.ToString().TrimStart("Bypass List     :  ")
+    $ProxyLine = $winHTTP | Select-String -Pattern 'Proxy Server\(s\)\s*:\s*(.+)$'
+    if ($ProxyLine){
+        $global:ProxyServer = $ProxyLine.Matches[0].Groups[1].Value.Trim()
+    }
+    $BypassLine = $winHTTP | Select-String -Pattern 'Bypass List\s*:\s*(.+)$'
+    $global:Bypass = if ($BypassLine) { $BypassLine.Matches[0].Groups[1].Value.Trim() } else { "" }
 
-    if ($global:ProxyServer -eq "Direct access (no proxy server)."){
+    if ([string]::IsNullOrWhiteSpace($global:ProxyServer) -or ($global:ProxyServer -eq "Direct access (no proxy server).")){
         $global:ProxyServer="NoProxy"
         If($Write){Write-Host "Access Type : DIRECT"; Write-Log -Message "Access Type : DIRECT"}
     }
 
-    if ( ($global:ProxyServer -ne "NoProxy") -and (-not($global:ProxyServer.StartsWith("http://")))){
+    if ($global:ProxyServer -ne "NoProxy"){
+        $proxyAddress = $global:ProxyServer
+        if ($proxyAddress -match '='){
+            $httpsProxy = $proxyAddress -split ';' | Where-Object { $_ -match '^https=' } | ForEach-Object { ($_ -split '=',2)[1] } | Select-Object -First 1
+            $httpProxy = $proxyAddress -split ';' | Where-Object { $_ -match '^http=' } | ForEach-Object { ($_ -split '=',2)[1] } | Select-Object -First 1
+            $proxyAddress = if ($httpsProxy) { $httpsProxy } else { $httpProxy }
+        }
+        if (-not $proxyAddress){
+            $proxyAddress = $global:ProxyServer
+        }
+        if ($proxyAddress -and -not ($proxyAddress.StartsWith("http://") -or $proxyAddress.StartsWith("https://"))){
+            $proxyAddress = "http://" + $proxyAddress
+        }
+        $global:ProxyServer = $proxyAddress
         If($Write){Write-Host "      Access Type : PROXY"; Write-Log -Message "      Access Type : PROXY"}
         If($Write){Write-Host "Proxy Server List :" $global:ProxyServer; Write-Log -Message "Proxy Server List : $global:ProxyServer"}
         If($Write){Write-Host "Proxy Bypass List :" $global:Bypass; Write-Log -Message "Proxy Bypass List : $global:Bypass"}
-        $global:ProxyServer = "http://" + $global:ProxyServer
     }
 
-    $global:login= $global:Bypass.Contains("*.microsoftonline.com") -or $global:Bypass.Contains("login.microsoftonline.com")
+    $bypassLower = $global:Bypass.ToLowerInvariant()
+    $global:login= $bypassLower.Contains("*.microsoftonline.com") -or $bypassLower.Contains("login.microsoftonline.com")
 
-    $global:device= $global:Bypass.Contains("*.microsoftonline.com") -or $global:Bypass.Contains("*.login.microsoftonline.com") -or $global:Bypass.Contains("device.login.microsoftonline.com")
+    $global:device= $bypassLower.Contains("*.microsoftonline.com") -or $bypassLower.Contains("*.login.microsoftonline.com") -or $bypassLower.Contains("device.login.microsoftonline.com")
 
-    $global:enterprise= $global:Bypass.Contains("*.windows.net") -or $global:Bypass.Contains("enterpriseregistration.windows.net")
+    $global:enterprise= $bypassLower.Contains("*.windows.net") -or $bypassLower.Contains("enterpriseregistration.windows.net")
 
     #CheckwinInet proxy
     If($Write){Write-Host ''}
     If($Write){Write-Host "Checking winInet proxy settings..." -ForegroundColor Yellow; Write-Log -Message "Checking winInet proxy settings..."}
     $winInet=RunPScript -PSScript "Get-ItemProperty -Path 'Registry::HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings'"
-    if($winInet.ProxyEnable){If($Write){Write-Host "    Proxy Enabled : Yes"; Write-Log -Message "    Proxy Enabled : Yes"}}else{If($Write){Write-Host "    Proxy Enabled : No";Write-Log -Message "    Proxy Enabled : No"}}
-    $winInetProxy="Proxy Server List : "+$winInet.ProxyServer
-    If($Write){Write-Host $winInetProxy;Write-Log -Message $winInetProxy}
-    $winInetBypass="Proxy Bypass List : "+$winInet.ProxyOverride
-    If($Write){Write-Host $winInetBypass; Write-Log -Message $winInetBypass}
-    $winInetAutoConfigURL="    AutoConfigURL : "+$winInet.AutoConfigURL
-    If($Write){Write-Host $winInetAutoConfigURL;Write-Log -Message $winInetAutoConfigURL}
+    if ($winInet){
+        if($winInet.ProxyEnable){If($Write){Write-Host "    Proxy Enabled : Yes"; Write-Log -Message "    Proxy Enabled : Yes"}}else{If($Write){Write-Host "    Proxy Enabled : No";Write-Log -Message "    Proxy Enabled : No"}}
+        $winInetProxy="Proxy Server List : "+$winInet.ProxyServer
+        If($Write){Write-Host $winInetProxy;Write-Log -Message $winInetProxy}
+        $winInetBypass="Proxy Bypass List : "+$winInet.ProxyOverride
+        If($Write){Write-Host $winInetBypass; Write-Log -Message $winInetBypass}
+        $winInetAutoConfigURL="    AutoConfigURL : "+$winInet.AutoConfigURL
+        If($Write){Write-Host $winInetAutoConfigURL;Write-Log -Message $winInetAutoConfigURL}
+    } else {
+        If($Write){Write-Host "    Proxy Enabled : Unknown"; Write-Log -Message "    Proxy Enabled : Unknown"}
+    }
 
     return $global:ProxyServer
 }
