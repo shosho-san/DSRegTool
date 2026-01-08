@@ -727,40 +727,59 @@ Function checkProxy($Write){
     If($Write){Write-Host "Checking winHTTP proxy settings..." -ForegroundColor Yellow; Write-Log -Message "Checking winHTTP proxy settings..."}
     $global:ProxyServer="NoProxy"
     $winHTTP = netsh winhttp show proxy
-    $Proxy = $winHTTP | Select-String server
-    $global:ProxyServer=$Proxy.ToString().TrimStart("Proxy Server(s) :  ")
-    $global:Bypass = $winHTTP | Select-String Bypass
-    $global:Bypass=$global:Bypass.ToString().TrimStart("Bypass List     :  ")
+    $ProxyLine = $winHTTP | Select-String -Pattern 'Proxy Server\(s\)\s*:\s*(.+)$'
+    if ($ProxyLine){
+        $global:ProxyServer = $ProxyLine.Matches[0].Groups[1].Value.Trim()
+    }
+    $BypassLine = $winHTTP | Select-String -Pattern 'Bypass List\s*:\s*(.+)$'
+    $global:Bypass = if ($BypassLine) { $BypassLine.Matches[0].Groups[1].Value.Trim() } else { "" }
 
-    if ($global:ProxyServer -eq "Direct access (no proxy server)."){
+    if ([string]::IsNullOrWhiteSpace($global:ProxyServer) -or ($global:ProxyServer -eq "Direct access (no proxy server).")){
         $global:ProxyServer="NoProxy"
         If($Write){Write-Host "Access Type : DIRECT"; Write-Log -Message "Access Type : DIRECT"}
     }
 
-    if ( ($global:ProxyServer -ne "NoProxy") -and (-not($global:ProxyServer.StartsWith("http://")))){
+    if ($global:ProxyServer -ne "NoProxy"){
+        $proxyAddress = $global:ProxyServer
+        if ($proxyAddress -match '='){
+            $httpsProxy = $proxyAddress -split ';' | Where-Object { $_ -match '^https=' } | ForEach-Object { ($_ -split '=',2)[1] } | Select-Object -First 1
+            $httpProxy = $proxyAddress -split ';' | Where-Object { $_ -match '^http=' } | ForEach-Object { ($_ -split '=',2)[1] } | Select-Object -First 1
+            $proxyAddress = if ($httpsProxy) { $httpsProxy } else { $httpProxy }
+        }
+        if (-not $proxyAddress){
+            $proxyAddress = $global:ProxyServer
+        }
+        if ($proxyAddress -and -not ($proxyAddress.StartsWith("http://") -or $proxyAddress.StartsWith("https://"))){
+            $proxyAddress = "http://" + $proxyAddress
+        }
+        $global:ProxyServer = $proxyAddress
         If($Write){Write-Host "      Access Type : PROXY"; Write-Log -Message "      Access Type : PROXY"}
         If($Write){Write-Host "Proxy Server List :" $global:ProxyServer; Write-Log -Message "Proxy Server List : $global:ProxyServer"}
         If($Write){Write-Host "Proxy Bypass List :" $global:Bypass; Write-Log -Message "Proxy Bypass List : $global:Bypass"}
-        $global:ProxyServer = "http://" + $global:ProxyServer
     }
 
-    $global:login= $global:Bypass.Contains("*.microsoftonline.com") -or $global:Bypass.Contains("login.microsoftonline.com")
+    $bypassLower = $global:Bypass.ToLowerInvariant()
+    $global:login= $bypassLower.Contains("*.microsoftonline.com") -or $bypassLower.Contains("login.microsoftonline.com")
 
-    $global:device= $global:Bypass.Contains("*.microsoftonline.com") -or $global:Bypass.Contains("*.login.microsoftonline.com") -or $global:Bypass.Contains("device.login.microsoftonline.com")
+    $global:device= $bypassLower.Contains("*.microsoftonline.com") -or $bypassLower.Contains("*.login.microsoftonline.com") -or $bypassLower.Contains("device.login.microsoftonline.com")
 
-    $global:enterprise= $global:Bypass.Contains("*.windows.net") -or $global:Bypass.Contains("enterpriseregistration.windows.net")
+    $global:enterprise= $bypassLower.Contains("*.windows.net") -or $bypassLower.Contains("enterpriseregistration.windows.net")
 
     #CheckwinInet proxy
     If($Write){Write-Host ''}
     If($Write){Write-Host "Checking winInet proxy settings..." -ForegroundColor Yellow; Write-Log -Message "Checking winInet proxy settings..."}
     $winInet=RunPScript -PSScript "Get-ItemProperty -Path 'Registry::HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings'"
-    if($winInet.ProxyEnable){If($Write){Write-Host "    Proxy Enabled : Yes"; Write-Log -Message "    Proxy Enabled : Yes"}}else{If($Write){Write-Host "    Proxy Enabled : No";Write-Log -Message "    Proxy Enabled : No"}}
-    $winInetProxy="Proxy Server List : "+$winInet.ProxyServer
-    If($Write){Write-Host $winInetProxy;Write-Log -Message $winInetProxy}
-    $winInetBypass="Proxy Bypass List : "+$winInet.ProxyOverride
-    If($Write){Write-Host $winInetBypass; Write-Log -Message $winInetBypass}
-    $winInetAutoConfigURL="    AutoConfigURL : "+$winInet.AutoConfigURL
-    If($Write){Write-Host $winInetAutoConfigURL;Write-Log -Message $winInetAutoConfigURL}
+    if ($winInet){
+        if($winInet.ProxyEnable){If($Write){Write-Host "    Proxy Enabled : Yes"; Write-Log -Message "    Proxy Enabled : Yes"}}else{If($Write){Write-Host "    Proxy Enabled : No";Write-Log -Message "    Proxy Enabled : No"}}
+        $winInetProxy="Proxy Server List : "+$winInet.ProxyServer
+        If($Write){Write-Host $winInetProxy;Write-Log -Message $winInetProxy}
+        $winInetBypass="Proxy Bypass List : "+$winInet.ProxyOverride
+        If($Write){Write-Host $winInetBypass; Write-Log -Message $winInetBypass}
+        $winInetAutoConfigURL="    AutoConfigURL : "+$winInet.AutoConfigURL
+        If($Write){Write-Host $winInetAutoConfigURL;Write-Log -Message $winInetAutoConfigURL}
+    } else {
+        If($Write){Write-Host "    Proxy Enabled : Unknown"; Write-Log -Message "    Proxy Enabled : Unknown"}
+    }
 
     return $global:ProxyServer
 }
@@ -1878,27 +1897,77 @@ Function CheckMSOnline{
 }
 
 Function RunPScript([String] $PSScript){
-    $GUID=[guid]::NewGuid().Guid
-    $TaskName = "DSRegTool_$GUID"
-
-    $Job = Register-ScheduledJob -Name $GUID -ScheduledJobOption (New-ScheduledJobOption -RunElevated) -ScriptBlock ([ScriptBlock]::Create($PSScript)) -ArgumentList ($PSScript) -ErrorAction Stop
-
-    $null = Register-ScheduledTask -TaskName $TaskName -Action (New-ScheduledTaskAction -Execute $Job.PSExecutionPath -Argument $Job.PSExecutionArgs) -Principal (New-ScheduledTaskPrincipal -UserID "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest) -ErrorAction Stop
-
-    Start-ScheduledTask -TaskName $TaskName -AsJob -ErrorAction Stop | Wait-Job | Remove-Job -Force -Confirm:$False
-
-    while ($true) {
-        $TaskInfo = Get-ScheduledTaskInfo -TaskName $TaskName -ErrorAction SilentlyContinue
-        if (-not $TaskInfo -or $TaskInfo.LastTaskResult -ne 267009) {break}
-        Start-Sleep -Milliseconds 150
+    if (-not (PSasAdmin)){
+        Write-Error "RunPScript requires elevated privileges to execute under SYSTEM."
+        return $null
     }
 
-    $Job1 = Get-Job -Name $GUID -ErrorAction SilentlyContinue | Wait-Job
-    $Job1 | Receive-Job -Wait -AutoRemoveJob 
+    $GUID=[guid]::NewGuid().Guid
+    $TaskName = "DSRegTool_$GUID"
+    $TempRoot = Join-Path $env:TEMP "DSRegTool"
+    $ScriptFile = Join-Path $TempRoot "$TaskName.ps1"
+    $OutFile = Join-Path $TempRoot "$TaskName.xml"
+    $ErrFile = Join-Path $TempRoot "$TaskName.err.txt"
 
-    Unregister-ScheduledJob -Id $Job.Id -Force -Confirm:$False
+    if (-not (Test-Path -Path $TempRoot)) {
+        New-Item -Path $TempRoot -ItemType Directory -Force | Out-Null
+    }
+    try {
+        # Ensure SYSTEM can read/write in the per-user temp folder.
+        $acl = Get-Acl -Path $TempRoot
+        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule("SYSTEM","FullControl","ContainerInherit,ObjectInherit","None","Allow")
+        $acl.SetAccessRule($rule)
+        Set-Acl -Path $TempRoot -AclObject $acl
+    } catch {
+    }
 
-    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+    $scriptTemplate = @'
+$ErrorActionPreference = "Stop"
+try {
+    $result = & {
+__DSREGTOOL_SCRIPT__
+    }
+    $result | Export-Clixml -Path "__DSREGTOOL_OUT__" -Force
+} catch {
+    $_ | Out-String | Set-Content -Path "__DSREGTOOL_ERR__" -Force
+    exit 1
+}
+'@
+    $scriptContent = $scriptTemplate.Replace("__DSREGTOOL_SCRIPT__", $PSScript).Replace("__DSREGTOOL_OUT__", $OutFile).Replace("__DSREGTOOL_ERR__", $ErrFile)
+    Set-Content -Path $ScriptFile -Value $scriptContent -Encoding ASCII -Force
+
+    $action = New-ScheduledTaskAction -Execute "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$ScriptFile`""
+    $principal = New-ScheduledTaskPrincipal -UserID "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+
+    try {
+        Register-ScheduledTask -TaskName $TaskName -Action $action -Principal $principal -ErrorAction Stop | Out-Null
+        Start-ScheduledTask -TaskName $TaskName -ErrorAction Stop | Out-Null
+
+        $startTime = Get-Date
+        $timeoutSeconds = 120
+        while (-not (Test-Path -Path $OutFile) -and -not (Test-Path -Path $ErrFile)) {
+            if ((New-TimeSpan -Start $startTime -End (Get-Date)).TotalSeconds -gt $timeoutSeconds) {break}
+            Start-Sleep -Milliseconds 200
+        }
+
+        if (Test-Path -Path $OutFile) {
+            return Import-Clixml -Path $OutFile -ErrorAction SilentlyContinue
+        }
+        if (Test-Path -Path $ErrFile) {
+            $errText = Get-Content -Path $ErrFile -Raw -ErrorAction SilentlyContinue
+            if ($errText) {
+                Write-Error $errText
+            }
+        }
+
+        return $null
+    } finally {
+        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
+        try {
+            Remove-Item -Path $ScriptFile,$OutFile,$ErrFile -Force -ErrorAction SilentlyContinue
+        } catch {
+        }
+    }
 }
 
 Function CheckCert ([String] $DeviceID, [String] $DeviceThumbprint){
@@ -3256,7 +3325,7 @@ if($null -ne $Error[0].Exception.Message){
     Write-Host ''
 }
 Add-Content ".\DSRegTool.log" -Value "==========================================================" -ErrorAction SilentlyContinue
-Write-Log -Message "DSRegTool 4.0 has started"
+Write-Log -Message "DSRegTool 4.0.1 has started"
 $msg="Device Name : " + (Get-Childitem env:computername).value
 Write-Log -Message $msg
 
