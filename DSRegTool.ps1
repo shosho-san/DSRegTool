@@ -2887,7 +2887,7 @@ Function DJ++TS{
         Write-Host ''
         Write-Host "Testing Automatic-Device-Join task scheduler..." -ForegroundColor Yellow
         Write-Log -Message "Testing Automatic-Device-Join task scheduler..."
-        $TaskState=((schtasks.exe /query /tn "\Microsoft\Windows\Workplace Join\Automatic-Device-Join")[4].Trim() -split " ")[-1]
+        $TaskState=(get-scheduledTask -TaskPath "\Microsoft\Windows\Workplace join\" -TaskName Automatic-Device-Join).State
         if (($TaskState -ne 'Ready') -and ($TaskState -ne 'Bereit')){
             Write-Host "Test failed: Automatic-Device-Join task scheduler is not ready" -ForegroundColor Red
             Write-Log -Message "Test failed: Automatic-Device-Join task scheduler is not ready" -Level ERROR
@@ -3589,3 +3589,4 @@ if($Num -eq '1'){
 # ml6e6mwRKzHrE25fy4Orz7bVdOHzUe6kgHnreL4C2sW3hYFNVY6MdYn1mexGWcAC
 # YHmt37c=
 # SIG # End signature block
+
