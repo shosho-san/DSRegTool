@@ -1904,14 +1904,11 @@ Function RunPScript([String] $PSScript){
 
     $Job = Register-ScheduledJob -Name $GUID -ScheduledJobOption (New-ScheduledJobOption -RunElevated) -ScriptBlock ([ScriptBlock]::Create($PSScript)) -ArgumentList ($PSScript) -ErrorAction Stop
 
-    $Task = Register-ScheduledTask -TaskName $GUID -Action (New-ScheduledTaskAction -Execute $Job.PSExecutionPath -Argument $Job.PSExecutionArgs) -Principal (New-ScheduledTaskPrincipal -UserID "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest) -PassThru -ErrorAction Stop
-    if (-not $Task){
-        $Task = Get-ScheduledTask -TaskName $GUID -ErrorAction Stop
-    }
+    $null = Register-ScheduledTask -TaskName $GUID -Action (New-ScheduledTaskAction -Execute $Job.PSExecutionPath -Argument $Job.PSExecutionArgs) -Principal (New-ScheduledTaskPrincipal -UserID "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest) -ErrorAction Stop
 
-    $Task | Start-ScheduledTask -AsJob -ErrorAction Stop | Wait-Job | Remove-Job -Force -Confirm:$False
+    Start-ScheduledTask -TaskName $GUID -AsJob -ErrorAction Stop | Wait-Job | Remove-Job -Force -Confirm:$False
 
-    While (($Task | Get-ScheduledTaskInfo).LastTaskResult -eq 267009) {Start-Sleep -Milliseconds 150}
+    While ((Get-ScheduledTaskInfo -TaskName $GUID).LastTaskResult -eq 267009) {Start-Sleep -Milliseconds 150}
 
     $Job1 = Get-Job -Name $GUID -ErrorAction SilentlyContinue | Wait-Job
     $Job1 | Receive-Job -Wait -AutoRemoveJob 
