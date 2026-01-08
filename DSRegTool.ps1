@@ -1878,12 +1878,29 @@ Function CheckMSOnline{
 }
 
 Function RunPScript([String] $PSScript){
+    if (-not (PSasAdmin)){
+        Write-Error "RunPScript requires elevated privileges to execute under SYSTEM."
+        return $null
+    }
+
     $GUID=[guid]::NewGuid().Guid
     $TaskName = "DSRegTool_$GUID"
-    $TempRoot = Join-Path $env:WINDIR "Temp"
+    $TempRoot = Join-Path $env:TEMP "DSRegTool"
     $ScriptFile = Join-Path $TempRoot "$TaskName.ps1"
     $OutFile = Join-Path $TempRoot "$TaskName.xml"
     $ErrFile = Join-Path $TempRoot "$TaskName.err.txt"
+
+    if (-not (Test-Path -Path $TempRoot)) {
+        New-Item -Path $TempRoot -ItemType Directory -Force | Out-Null
+    }
+    try {
+        # Ensure SYSTEM can read/write in the per-user temp folder.
+        $acl = Get-Acl -Path $TempRoot
+        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule("SYSTEM","FullControl","ContainerInherit,ObjectInherit","None","Allow")
+        $acl.SetAccessRule($rule)
+        Set-Acl -Path $TempRoot -AclObject $acl
+    } catch {
+    }
 
     $scriptTemplate = @'
 $ErrorActionPreference = "Stop"
@@ -1917,11 +1934,20 @@ __DSREGTOOL_SCRIPT__
         if (Test-Path -Path $OutFile) {
             return Import-Clixml -Path $OutFile -ErrorAction SilentlyContinue
         }
+        if (Test-Path -Path $ErrFile) {
+            $errText = Get-Content -Path $ErrFile -Raw -ErrorAction SilentlyContinue
+            if ($errText) {
+                Write-Error $errText
+            }
+        }
 
         return $null
     } finally {
         Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
-        Remove-Item -Path $ScriptFile,$OutFile,$ErrFile -Force -ErrorAction SilentlyContinue
+        try {
+            Remove-Item -Path $ScriptFile,$OutFile,$ErrFile -Force -ErrorAction SilentlyContinue
+        } catch {
+        }
     }
 }
 
